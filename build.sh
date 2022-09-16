@@ -3,8 +3,6 @@
 rm -rf bin/
 # rm -rf vendor/
 
-glide install -v
-
 export CGO_ENABLED=0
 export GOARCH=amd64
 

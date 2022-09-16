@@ -1,31 +1,34 @@
 package kapacitor
 
 import (
-	"github.com/hashicorp/terraform/helper/schema"
+	"context"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/influxdata/kapacitor/client/v1"
 )
 
 func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
-			"url": &schema.Schema{
+			"url": {
 				Type:     schema.TypeString,
 				Required: true,
 			},
-			"username": &schema.Schema{
-				Type:     schema.TypeString,
-				Optional: true,
+			"username": {
+				Type:        schema.TypeString,
+				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KAPACITOR_USERNAME", nil),
 			},
-			"password": &schema.Schema{
-				Type:     schema.TypeString,
-				Sensitive: true,
-				Optional: true,
+			"password": {
+				Type:        schema.TypeString,
+				Sensitive:   true,
+				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KAPACITOR_PASSWORD", nil),
 			},
 		},
 
-		ConfigureFunc: configure,
+		ConfigureContextFunc: configure,
 
 		ResourcesMap: map[string]*schema.Resource{
 			"kapacitor_task": taskResource(),
@@ -33,7 +36,9 @@ func Provider() *schema.Provider {
 	}
 }
 
-func configure(d *schema.ResourceData) (interface{}, error) {
+func configure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
 	config := client.Config{
 		URL:       d.Get("url").(string),
 		UserAgent: "Terraform",
@@ -43,19 +48,19 @@ func configure(d *schema.ResourceData) (interface{}, error) {
 		config.Credentials = &client.Credentials{
 			Username: d.Get("username").(string),
 			Password: d.Get("password").(string),
-			Method: client.UserAuthentication,
+			Method:   client.UserAuthentication,
 		}
 	}
 
 	conn, err := client.New(config)
 	if err != nil {
-		return nil, err
+		return nil, diag.FromErr(err)
 	}
 
 	_, _, err = conn.Ping()
 	if err != nil {
-		return nil, err
+		return nil, diag.FromErr(err)
 	}
 
-	return conn, nil
+	return conn, diags
 }

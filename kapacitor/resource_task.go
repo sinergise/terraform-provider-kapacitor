@@ -1,12 +1,12 @@
 package kapacitor
 
 import (
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/influxdata/kapacitor/client/v1"
-	"errors"
-	"bytes"
+	"context"
 	"fmt"
-	"github.com/hashicorp/terraform/helper/hashcode"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/influxdata/kapacitor/client/v1"
 )
 
 func taskResource() *schema.Resource {
@@ -30,7 +30,7 @@ func taskResource() *schema.Resource {
 				ForceNew: true,
 			},
 
-			"dbrp": &schema.Schema{
+			"dbrp": {
 				Type:     schema.TypeSet,
 				Required: true,
 				Elem: &schema.Resource{
@@ -58,14 +58,14 @@ func taskResource() *schema.Resource {
 			},
 		},
 
-		Create: taskResourceCreare,
-		Read:   taskResourceRead,
-		Update: taskResourceUpdate,
-		Delete: taskResourceDelete,
+		CreateContext: taskResourceCreate,
+		ReadContext:   taskResourceRead,
+		UpdateContext: taskResourceUpdate,
+		DeleteContext: taskResourceDelete,
 	}
 }
 
-func taskResourceCreare(d *schema.ResourceData, meta interface{}) error {
+func taskResourceCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) (diags diag.Diagnostics) {
 	conn := meta.(*client.Client)
 
 	var opts client.CreateTaskOptions
@@ -80,7 +80,7 @@ func taskResourceCreare(d *schema.ResourceData, meta interface{}) error {
 	case "batch":
 		opts.Type = client.BatchTask
 	default:
-		return errors.New("Unknown task type")
+		return diag.Errorf("unknown task type")
 	}
 
 	opts.TICKscript = d.Get("tick_script").(string)
@@ -103,22 +103,22 @@ func taskResourceCreare(d *schema.ResourceData, meta interface{}) error {
 
 	task, err := conn.CreateTask(opts)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
 	d.SetId(task.ID)
 	d.Set("name", task.ID)
 
-	return nil
+	return
 }
 
-func taskResourceRead(d *schema.ResourceData, meta interface{}) error {
+func taskResourceRead(ctx context.Context, d *schema.ResourceData, meta interface{}) (diags diag.Diagnostics) {
 	conn := meta.(*client.Client)
 	id := d.Id()
 
 	task, err := conn.Task(conn.TaskLink(id), &client.TaskOptions{ScriptFormat: "raw"})
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
 	d.Set("name", id)
@@ -129,7 +129,7 @@ func taskResourceRead(d *schema.ResourceData, meta interface{}) error {
 	case client.BatchTask:
 		d.Set("type", "batch")
 	default:
-		return errors.New("Unknown task type")
+		return diag.Errorf("unknown task type")
 	}
 
 	d.Set("tick_script", task.TICKscript)
@@ -138,10 +138,10 @@ func taskResourceRead(d *schema.ResourceData, meta interface{}) error {
 	d.Set("retention_policy", task.DBRPs[0].RetentionPolicy)
 	d.Set("enabled", task.Status == client.Enabled)
 
-	return nil
+	return
 }
 
-func taskResourceUpdate(d *schema.ResourceData, meta interface{}) error {
+func taskResourceUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) (diags diag.Diagnostics) {
 	conn := meta.(*client.Client)
 	id := d.Id()
 
@@ -156,28 +156,27 @@ func taskResourceUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 	_, err := conn.UpdateTask(conn.TaskLink(id), opts)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
-	return nil
+	return
 }
 
-func taskResourceDelete(d *schema.ResourceData, meta interface{}) error {
+func taskResourceDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) (diags diag.Diagnostics) {
 	conn := meta.(*client.Client)
 	id := d.Id()
 
 	err := conn.DeleteTask(conn.TaskLink(id))
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
 	d.SetId("")
-	return nil
+	return
 }
 
 func dbrpHash(v interface{}) int {
-	var buf bytes.Buffer
 	m := v.(map[string]interface{})
-	buf.WriteString(fmt.Sprintf("%s.%s", m["database"].(string), m["retention_policy"].(string)))
-	return hashcode.String(buf.String())
+	s := fmt.Sprintf("%s.%s", m["database"].(string), m["retention_policy"].(string))
+	return schema.HashString(s)
 }
